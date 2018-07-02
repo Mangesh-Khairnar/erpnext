@@ -17,7 +17,7 @@ frappe.Leaderboard = Class.extend({
 		this.$sidebar_list = this.page.sidebar.find('ul');
 
 		// const list of doctypes
-		this.doctypes = ["Customer", "Item", "Supplier", "Sales Partner","Sales Person"];
+		this.doctypes = ["Customer", "Item", "Supplier", "Sales Partner","Sales Person", "User"];
 		this.timespans = ["Week", "Month", "Quarter", "Year"];
 		this.filters = {
 			"Customer": ["total_sales_amount", "total_qty_sold", "outstanding_amount", ],
@@ -26,6 +26,7 @@ frappe.Leaderboard = Class.extend({
 			"Supplier": ["total_purchase_amount", "total_qty_purchased", "outstanding_amount"],
 			"Sales Partner": ["total_sales_amount", "total_commission"],
 			"Sales Person": ["total_sales_amount"],
+			"User": ["energy_point"]
 		};
 
 		// for saving current selected filters
@@ -86,7 +87,6 @@ frappe.Leaderboard = Class.extend({
 		this.$sidebar_list.on('click', 'li', function(e) {
 			let $li = $(this);
 			let doctype = $li.find('span').attr("doctype-value");
-
 			me.options.selected_company = frappe.defaults.get_default('company');
 			me.options.selected_doctype = doctype;
 			me.options.selected_filter = me.filters[doctype];
