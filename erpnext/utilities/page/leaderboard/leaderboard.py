@@ -20,6 +20,8 @@ def get_leaderboard(doctype, timespan, company, field):
 		records = get_all_sales_partner(from_date, company, field)
 	elif doctype == "Sales Person":
 		records = get_all_sales_person(from_date, company)
+	elif doctype == "User":
+		records = get_all_users(field)
 
 	return records
 
@@ -136,6 +138,10 @@ def get_all_sales_person(from_date, company):
 	 	order by value DESC
 	 	limit 20
 	""", (from_date, company), as_dict=1)
+
+def get_all_users(field):
+	return frappe.get_all('User', fields=["full_name as name", field+" as value"], order_by=field+' DESC')
+
 
 def get_from_date(seleted_timespan):
 	"""return string for ex:this week as date:string"""
