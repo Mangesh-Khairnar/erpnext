@@ -232,15 +232,9 @@ frappe.Leaderboard = Class.extend({
 		let _html = items.map((item, index) => {
 			const $value = $(me.get_item_html(item));
 
-			let item_class = "";
-			if(index == 0) {
-				item_class = "first";
-			} else if (index == 1) {
-				item_class = "second";
-			} else if(index == 2) {
-				item_class = "third";
-			}
-			const $item_container = $(`<div class="list-item-container  ${item_class}">`).append($value);
+			const item_class = ['first', 'second', 'third'][index] || null;
+
+			const $item_container = $(`<div class="list-item-container ${item_class}">`).append($value);
 			return $item_container[0].outerHTML;
 		}).join("");
 
@@ -268,32 +262,38 @@ frappe.Leaderboard = Class.extend({
 	},
 
 	get_item_html: function (item) {
-		var me = this;
-		const company = me.options.selected_company;
-		const currency = frappe.get_doc(":Company", company).default_currency;
-		const fields = ['name','value'];
+		const me = this;
+		const get_row_html = () => {
+			const fields = ['name', 'value'];
+			const company = me.options.selected_company;
+			const doctype = me.options.selected_doctype;
+			const currency = frappe.get_doc(":Company", company).default_currency;
+			let row_class = 'list-item_content ellipsis list-item__content--flex-2';
+			let row_html = '';
 
-		const html =
-			`<div class="list-item">
-				${
 			fields.map(col => {
-					let val = item[col];
-					if(col=="name") {
-						var formatted_value = `<a class="grey list-id ellipsis"
-							href="#Form/${me.options.selected_doctype}/${item["name"]}"> ${val} </a>`
-					} else {
-						var formatted_value = `<span class="text-muted ellipsis">
-							${(me.options.selected_filter_item.indexOf('qty') == -1) ? format_currency(val, currency) : val}</span>`
-					}
+				let val = item[col];
+				let formatted_value = '';
 
-					return (
-						`<div class="list-item_content ellipsis list-item__content--flex-2
-							${(col == "value") ? "text-right" : ""}">
-							${formatted_value}
-						</div>`);
-					}).join("")
+				if (col === 'name') {
+					formatted_value = `<a class="grey list-id ellipsis" href="#Form/${doctype}/${val}"> ${val} </a>`
+				} else {
+					const filter_item = me.options.selected_filter_item;
+					const non_currency_field_regex = /(qty|point)/i;
+					const value = non_currency_field_regex.test(filter_item) ? val : format_currency(val, currency)
+
+					formatted_value = `<span class="text-muted ellipsis">${value}</span>`;
+					row_class += ' text-right';
 				}
-			</div>`;
+
+				row_html += `<div class="${row_class}">${formatted_value}</div>`;
+
+			});
+
+			return row_html;
+		}
+
+		const html =`<div class="list-item">${ get_row_html() }</div>`;
 
 		return html;
 	},
