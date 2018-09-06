@@ -7,8 +7,11 @@ import json
 from frappe import _
 
 from frappe.model.document import Document
-from frappe.utils import now
+from frappe.utils import now, cint
 from frappe.utils.user import is_website_user
+from frappe.utils.data import time_diff_in_seconds
+from frappe.core.doctype.user.user import update_user_energy_point
+from frappe.core.doctype.energy_point_log.energy_point_log import ENERGY_POINT_VALUES, create_energy_point_log
 
 sender_field = "raised_by"
 
@@ -160,3 +163,69 @@ def has_website_permission(doc, ptype, user, verbose=False):
 def update_issue(contact, method):
 	"""Called when Contact is deleted"""
 	frappe.db.sql("""UPDATE `tabIssue` set contact='' where contact=%s""", contact.name)
+
+def process_communication_for_energy_points(doc, state):
+	if not doc.reference_doctype == 'Issue': return
+	check_for_instant_reply(doc)
+	if not doc.rating: return
+	add_points_according_to_feedback_rating(doc)
+
+def check_for_instant_reply(doc):
+	reply_count = frappe.db.count('Communication', {
+		'reference_doctype': doc.reference_doctype,
+		'reference_name': doc.reference_name,
+		'communication_medium': 'Email',
+		'sent_or_received': 'Sent'
+	})
+
+	if reply_count == 1:
+		mins_to_first_response = frappe.db.get_value('Issue', doc.reference_name, 'mins_to_first_response')
+		if mins_to_first_response < 5:
+			create_energy_point_log(
+				ENERGY_POINT_VALUES['instant_reply_on_issue'],
+				'Instant reply on {0}'.format(doc.reference_name),
+				doc.doctype,
+				doc.name
+			)
+
+def add_points_according_to_feedback_rating(doc):
+	issue_repliers = frappe.get_all('Communication', filters={
+		'reference_doctype': doc.reference_doctype,
+		'reference_name': doc.reference_name,
+		'communication_medium': 'Email',
+		'sent_or_received': 'Sent',
+	}, fields=['sender as email'], distinct=True)
+
+	for replier in issue_repliers:
+		create_energy_point_log(
+			cint(doc.rating) * ENERGY_POINT_VALUES['feedback_point_multiplier'],
+			'Feedback point {0}'.format(doc.reference_name),
+			replier.email,
+			doc.reference_doctype,
+			doc.reference_name
+		)
+
+def process_issue_for_energy_points(doc, state):
+	if doc.get_doc_before_save().status != 'Closed' and doc.status == 'Closed':
+		last_issue_replier = frappe.get_all('Communication', filters={
+			'reference_doctype': doc.doctype,
+			'reference_name': doc.name,
+			'communication_medium': 'Email',
+			'sent_or_received': 'Sent',
+		}, fields=['sender as email'], order_by='creation desc', limit=1)
+
+		if not last_issue_replier: return
+
+		if frappe.db.count('Energy Point Log', {
+			'reference_doctype': doc.doctype,
+			'reference_name': doc.name,
+			'user': last_issue_replier[0].email
+		}): return
+
+		create_energy_point_log(
+			ENERGY_POINT_VALUES['issue_closed'],
+			'Closed {0}'.format(doc.name),
+			last_issue_replier[0].email,
+			doc.doctype,
+			doc.name
+		)
