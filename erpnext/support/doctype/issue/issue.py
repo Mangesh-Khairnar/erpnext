@@ -200,9 +200,9 @@ def add_points_according_to_feedback_rating(doc):
 		create_energy_point_log(
 			cint(doc.rating) * ENERGY_POINT_VALUES['feedback_point_multiplier'],
 			'Feedback point {0}'.format(doc.reference_name),
-			replier.email,
 			doc.reference_doctype,
-			doc.reference_name
+			doc.reference_name,
+			replier.email
 		)
 
 def process_issue_for_energy_points(doc, state):
@@ -225,7 +225,7 @@ def process_issue_for_energy_points(doc, state):
 		create_energy_point_log(
 			ENERGY_POINT_VALUES['issue_closed'],
 			'Closed {0}'.format(doc.name),
-			last_issue_replier[0].email,
 			doc.doctype,
-			doc.name
+			doc.name,
+			last_issue_replier[0].email
 		)
