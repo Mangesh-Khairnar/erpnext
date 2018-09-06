@@ -218,6 +218,12 @@ doc_events = {
 	},
 	"Contact":{
 		"on_trash": "erpnext.support.doctype.issue.issue.update_issue"
+	},
+	"Communication": {
+		"after_insert": "erpnext.support.doctype.issue.issue.process_communication_for_energy_points"
+	},
+	"Issue": {
+		"on_update": "erpnext.support.doctype.issue.issue.process_issue_for_energy_points"
 	}
 }
 
