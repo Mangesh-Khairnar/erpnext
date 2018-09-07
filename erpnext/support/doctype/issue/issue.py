@@ -10,7 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import now, cint
 from frappe.utils.user import is_website_user
 from frappe.utils.data import time_diff_in_seconds
-from frappe.core.doctype.user.user import update_user_energy_point
+from frappe.core.doctype.counter.counter import update_counter
 from frappe.core.doctype.energy_point_log.energy_point_log import ENERGY_POINT_VALUES, create_energy_point_log
 
 sender_field = "raised_by"
@@ -166,9 +166,11 @@ def update_issue(contact, method):
 
 def process_communication_for_energy_points(doc, state):
 	if not doc.reference_doctype == 'Issue': return
-	check_for_instant_reply(doc)
-	if not doc.rating: return
-	add_points_according_to_feedback_rating(doc)
+	if doc.rating:
+		add_points_according_to_feedback_rating(doc)
+	else:
+		update_issue_reply_counter(doc)
+		check_for_instant_reply(doc)
 
 def check_for_instant_reply(doc):
 	reply_count = frappe.db.count('Communication', {
@@ -229,3 +231,6 @@ def process_issue_for_energy_points(doc, state):
 			doc.name,
 			last_issue_replier[0].email
 		)
+
+def update_issue_reply_counter(doc):
+	update_counter(doc.sender, 'issue_replies')
