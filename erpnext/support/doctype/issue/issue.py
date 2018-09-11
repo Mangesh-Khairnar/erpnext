@@ -10,7 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import now, cint
 from frappe.utils.user import is_website_user
 from frappe.utils.data import time_diff_in_seconds
-from frappe.core.doctype.counter.counter import update_counter
+from frappe.core.doctype.activity_counter.activity_counter import update_activity_counter
 from frappe.core.doctype.energy_point_log.energy_point_log import ENERGY_POINT_VALUES, create_energy_point_log
 
 sender_field = "raised_by"
@@ -217,7 +217,11 @@ def process_issue_for_energy_points(doc, state):
 		}, fields=['sender as email'], order_by='creation desc', limit=1)
 
 		if not last_issue_replier: return
-
+		print(frappe.db.count('Energy Point Log', {
+			'reference_doctype': doc.doctype,
+			'reference_name': doc.name,
+			'user': last_issue_replier[0].email
+		}), '===============================================')
 		if frappe.db.count('Energy Point Log', {
 			'reference_doctype': doc.doctype,
 			'reference_name': doc.name,
@@ -233,4 +237,4 @@ def process_issue_for_energy_points(doc, state):
 		)
 
 def update_issue_reply_counter(doc):
-	update_counter(doc.sender, 'issue_replies')
+	update_activity_counter(doc.sender, 'issue_replies')
