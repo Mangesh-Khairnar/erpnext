@@ -19,7 +19,7 @@ frappe.query_reports["Defined Contribution Pension Scheme"] = {
 		},
 		{
 			fieldname: "branch",
-			label: __("Barnch"),
+			label: __("Branch"),
 			fieldtype: "Link",
 			options: "Branch",
 		},
