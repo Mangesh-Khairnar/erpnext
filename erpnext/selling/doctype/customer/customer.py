@@ -214,8 +214,9 @@ def get_loyalty_programs(doc):
 			"ifnull(to_date, '2500-01-01')": [">=", today()]})
 
 	for loyalty_program in loyalty_programs:
-		customer_groups = [d.value for d in get_children("Customer Group", loyalty_program.customer_group)]
-		customer_territories = [d.value for d in get_children("Territory", loyalty_program.customer_territory)]
+		customer_groups = [d.value for d in get_children("Customer Group", loyalty_program.customer_group)] + [loyalty_program.customer_group]
+		customer_territories = [d.value for d in get_children("Territory", loyalty_program.customer_territory)] + [loyalty_program.customer_territory]
+
 		if (not loyalty_program.customer_group or doc.customer_group in customer_groups)\
 			and (not loyalty_program.customer_territory or doc.territory in customer_territories):
 			lp_details.append(loyalty_program.name)
@@ -315,14 +316,14 @@ def get_credit_limit(customer, company):
 	credit_limit = None
 
 	if customer:
-		credit_limit, customer_group = frappe.db.get_value("Customer",
+		credit_limit, customer_group = frappe.get_cached_value("Customer",
 			customer, ["credit_limit", "customer_group"])
 
 		if not credit_limit:
-			credit_limit = frappe.db.get_value("Customer Group", customer_group, "credit_limit")
+			credit_limit = frappe.get_cached_value("Customer Group", customer_group, "credit_limit")
 
 	if not credit_limit:
-		credit_limit = frappe.db.get_value("Company", company, "credit_limit")
+		credit_limit = frappe.get_cached_value('Company',  company,  "credit_limit")
 
 	return flt(credit_limit)
 

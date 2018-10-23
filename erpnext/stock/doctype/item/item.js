@@ -235,7 +235,7 @@ $.extend(erpnext.item, {
 		frm.fields_dict["item_defaults"].grid.get_field("buying_cost_center").get_query = function(doc, cdt, cdn) {
 			const row = locals[cdt][cdn];
 			return {
-				filters: { 
+				filters: {
 					"is_group": 0,
 					"company": row.company
 				}
@@ -268,6 +268,24 @@ $.extend(erpnext.item, {
 				filters: [
 					['Item Group', 'docstatus', '!=', 2]
 				]
+			}
+		}
+
+		frm.fields_dict['deferred_revenue_account'].get_query = function() {
+			return {
+				filters: {
+					'root_type': 'Liability',
+					"is_group": 0
+				}
+			}
+		}
+
+		frm.fields_dict['deferred_expense_account'].get_query = function() {
+			return {
+				filters: {
+					'root_type': 'Asset',
+					"is_group": 0
+				}
 			}
 		}
 
@@ -441,11 +459,18 @@ $.extend(erpnext.item, {
 						"item": frm.doc.name,
 						"args": selected_attributes
 					},
-					callback: function() {
-						frappe.show_alert({
-							message: __("Variant creation has been queued."),
-							indicator: 'orange'
-						});
+					callback: function(r) {
+						if (r.message==='queued') {
+							frappe.show_alert({
+								message: __("Variant creation has been queued."),
+								indicator: 'orange'
+							});
+						} else {
+							frappe.show_alert({
+								message: __("{0} variants created.", [r.message]),
+								indicator: 'green'
+							});
+						}
 					}
 				});
 			});
@@ -624,15 +649,10 @@ $.extend(erpnext.item, {
 				.on('input', function(e) {
 					var term = e.target.value;
 					frappe.call({
-						method:"frappe.client.get_list",
+						method:"erpnext.stock.doctype.item.item.get_item_attribute",
 						args:{
-							doctype:"Item Attribute Value",
-							filters: [
-								["parent","=", i],
-								["attribute_value", "like", term + "%"]
-							],
-							fields: ["attribute_value"],
-							parent: "Item"
+							parent: i,
+							attribute_value: term
 						},
 						callback: function(r) {
 							if (r.message) {
@@ -685,14 +705,6 @@ $.extend(erpnext.item, {
 		}
 		frm.layout.refresh_sections();
 	}
-});
-
-frappe.ui.form.on("Item", {
-	setup: function(frm) {
-		// #13478 : Default Accounts in Item from Item Group
-		cur_frm.add_fetch('item_group', 'default_expense_account', 'expense_account');
-		cur_frm.add_fetch('item_group', 'default_income_account', 'income_account');
-	},
 });
 
 frappe.ui.form.on("UOM Conversion Detail", {

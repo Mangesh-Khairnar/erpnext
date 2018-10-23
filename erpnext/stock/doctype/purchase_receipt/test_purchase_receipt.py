@@ -320,12 +320,6 @@ class TestPurchaseReceipt(unittest.TestCase):
 				'asset_category': asset_category, 'serial_no_series': 'ABC.###'})
 			asset_item = item_data.item_code
 
-		if not frappe.db.exists('Location', 'Test Location'):
-			frappe.get_doc({
-				'doctype': 'Location',
-				'location_name': 'Test Location'
-			}).insert()
-
 		pr = make_purchase_receipt(item_code=asset_item, qty=3)
 		asset = frappe.db.get_value('Asset', {'purchase_receipt': pr.name}, 'name')
 		asset_movement = frappe.db.get_value('Asset Movement', {'reference_name': pr.name}, 'name')
@@ -339,15 +333,90 @@ class TestPurchaseReceipt(unittest.TestCase):
 		pr.cancel()
 		serial_nos = frappe.get_all('Serial No', {'asset': asset}, 'name') or []
 		self.assertEquals(len(serial_nos), 0)
-		frappe.db.sql("delete from `tabLocation")
+		#frappe.db.sql("delete from `tabLocation")
 		frappe.db.sql("delete from `tabAsset`")
 
+	def test_purchase_receipt_for_enable_allow_cost_center_in_entry_of_bs_account(self):
+		from erpnext.accounts.doctype.cost_center.test_cost_center import create_cost_center
+		accounts_settings = frappe.get_doc('Accounts Settings', 'Accounts Settings')
+		accounts_settings.allow_cost_center_in_entry_of_bs_account = 1
+		accounts_settings.save()
+		cost_center = "_Test Cost Center for BS Account - _TC"
+		create_cost_center(cost_center_name="_Test Cost Center for BS Account", company="_Test Company")
+
+		if not frappe.db.exists('Location', 'Test Location'):
+			frappe.get_doc({
+				'doctype': 'Location',
+				'location_name': 'Test Location'
+			}).insert()
+
+		set_perpetual_inventory(1, "_Test Company")
+		pr = make_purchase_receipt(cost_center=cost_center)
+		
+		stock_in_hand_account = get_inventory_account(pr.company, pr.get("items")[0].warehouse)
+		gl_entries = get_gl_entries("Purchase Receipt", pr.name)
+
+		self.assertTrue(gl_entries)
+
+		expected_values = {
+			"Stock Received But Not Billed - _TC": {
+				"cost_center": cost_center
+			},
+			stock_in_hand_account: {
+				"cost_center": cost_center
+			}
+		}
+		for i, gle in enumerate(gl_entries):
+			self.assertEqual(expected_values[gle.account]["cost_center"], gle.cost_center)
+
+		set_perpetual_inventory(0, pr.company)
+		accounts_settings.allow_cost_center_in_entry_of_bs_account = 0
+		accounts_settings.save()
+
+	def test_purchase_receipt_for_disable_allow_cost_center_in_entry_of_bs_account(self):
+		accounts_settings = frappe.get_doc('Accounts Settings', 'Accounts Settings')
+		accounts_settings.allow_cost_center_in_entry_of_bs_account = 0
+		accounts_settings.save()
+
+		if not frappe.db.exists('Location', 'Test Location'):
+			frappe.get_doc({
+				'doctype': 'Location',
+				'location_name': 'Test Location'
+			}).insert()
+
+		set_perpetual_inventory(1, "_Test Company")
+		pr = make_purchase_receipt()
+
+		stock_in_hand_account = get_inventory_account(pr.company, pr.get("items")[0].warehouse)
+		gl_entries = get_gl_entries("Purchase Receipt", pr.name)
+
+		self.assertTrue(gl_entries)
+
+		expected_values = {
+			"Stock Received But Not Billed - _TC": {
+				"cost_center": None
+			},
+			stock_in_hand_account: {
+				"cost_center": None
+			}
+		}
+		for i, gle in enumerate(gl_entries):
+			self.assertEqual(expected_values[gle.account]["cost_center"], gle.cost_center)
+
+		set_perpetual_inventory(0, pr.company)
+
 def get_gl_entries(voucher_type, voucher_no):
-	return frappe.db.sql("""select account, debit, credit
+	return frappe.db.sql("""select account, debit, credit, cost_center
 		from `tabGL Entry` where voucher_type=%s and voucher_no=%s
 		order by account desc""", (voucher_type, voucher_no), as_dict=1)
 
 def make_purchase_receipt(**args):
+	if not frappe.db.exists('Location', 'Test Location'):
+		frappe.get_doc({
+			'doctype': 'Location',
+			'location_name': 'Test Location'
+		}).insert()
+
 	frappe.db.set_value("Buying Settings", None, "allow_multiple_items", 1)
 	pr = frappe.new_doc("Purchase Receipt")
 	args = frappe._dict(args)
@@ -377,7 +446,7 @@ def make_purchase_receipt(**args):
 		"serial_no": args.serial_no,
 		"stock_uom": args.stock_uom or "_Test UOM",
 		"uom": args.uom or "_Test UOM",
-		"cost_center": args.cost_center or frappe.db.get_value('Company', pr.company, 'cost_center'),
+		"cost_center": args.cost_center or frappe.get_cached_value('Company',  pr.company,  'cost_center'),
 		"asset_location": args.location or "Test Location"
 	})
 
@@ -388,5 +457,5 @@ def make_purchase_receipt(**args):
 	return pr
 
 
-test_dependencies = ["BOM", "Item Price"]
+test_dependencies = ["BOM", "Item Price", "Location"]
 test_records = frappe.get_test_records('Purchase Receipt')

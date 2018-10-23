@@ -82,7 +82,8 @@ def get_place_of_supply(out, doctype):
 
 	if address_name:
 		address = frappe.db.get_value("Address", address_name, ["gst_state", "gst_state_number"], as_dict=1)
-		return cstr(address.gst_state_number) + "-" + cstr(address.gst_state)
+		if address and address.gst_state and address.gst_state_number:
+			return cstr(address.gst_state_number) + "-" + cstr(address.gst_state)
 
 def get_regional_address_details(out, doctype, company):
 	out.place_of_supply = get_place_of_supply(out, doctype)
@@ -111,8 +112,8 @@ def get_regional_address_details(out, doctype, company):
 	out.taxes = get_taxes_and_charges(master_doctype, default_tax)
 
 def calculate_annual_eligible_hra_exemption(doc):
-	basic_component = frappe.db.get_value("Company", doc.company, "basic_component")
-	hra_component = frappe.db.get_value("Company", doc.company, "hra_component")
+	basic_component = frappe.get_cached_value('Company',  doc.company,  "basic_component")
+	hra_component = frappe.get_cached_value('Company',  doc.company,  "hra_component")
 	annual_exemption, monthly_exemption, hra_amount = 0, 0, 0
 	if hra_component and basic_component:
 		assignment = get_salary_assignment(doc.employee, getdate())

@@ -44,7 +44,7 @@ class Asset(AccountsController):
 		self.db_set('booked_fixed_asset', 0)
 
 	def validate_item(self):
-		item = frappe.db.get_value("Item", self.item_code,
+		item = frappe.get_cached_value("Item", self.item_code,
 			["is_fixed_asset", "is_stock_item", "disabled"], as_dict=1)
 		if not item:
 			frappe.throw(_("Item {0} does not exist").format(self.item_code))
@@ -61,7 +61,7 @@ class Asset(AccountsController):
 
 	def set_missing_values(self):
 		if not self.asset_category:
-			self.asset_category = frappe.db.get_value("Item", self.item_code, "asset_category")
+			self.asset_category = frappe.get_cached_value("Item", self.item_code, "asset_category")
 
 		if self.item_code and not self.get('finance_books'):
 			finance_books = get_item_details(self.item_code, self.asset_category)
@@ -410,7 +410,7 @@ def get_asset_naming_series():
 def make_purchase_invoice(asset, item_code, gross_purchase_amount, company, posting_date):
 	pi = frappe.new_doc("Purchase Invoice")
 	pi.company = company
-	pi.currency = frappe.db.get_value("Company", company, "default_currency")
+	pi.currency = frappe.get_cached_value('Company',  company,  "default_currency")
 	pi.set_posting_time = 1
 	pi.posting_date = posting_date
 	pi.append("items", {
@@ -429,7 +429,7 @@ def make_purchase_invoice(asset, item_code, gross_purchase_amount, company, post
 def make_sales_invoice(asset, item_code, company, serial_no=None):
 	si = frappe.new_doc("Sales Invoice")
 	si.company = company
-	si.currency = frappe.db.get_value("Company", company, "default_currency")
+	si.currency = frappe.get_cached_value('Company',  company,  "default_currency")
 	disposal_account, depreciation_cost_center = get_disposal_account_and_cost_center(company)
 	si.append("items", {
 		"item_code": item_code,
@@ -504,10 +504,41 @@ def get_asset_account(account_name, asset=None, asset_category=None, company=Non
 				asset_category = asset_category, company = company)
 
 	if not account:
-		account = frappe.db.get_value('Company', company, account_name)
+		account = frappe.get_cached_value('Company',  company,  account_name)
 
 	if not account:
 		frappe.throw(_("Set {0} in asset category {1} or company {2}")
 			.format(account_name.replace('_', ' ').title(), asset_category, company))
 
 	return account
+
+@frappe.whitelist()
+def make_journal_entry(asset_name):
+	asset = frappe.get_doc("Asset", asset_name)
+	fixed_asset_account, accumulated_depreciation_account, depreciation_expense_account = \
+		get_depreciation_accounts(asset)
+
+	depreciation_cost_center, depreciation_series = frappe.db.get_value("Company", asset.company,
+		["depreciation_cost_center", "series_for_depreciation_entry"])
+	depreciation_cost_center = asset.cost_center or depreciation_cost_center
+
+	je = frappe.new_doc("Journal Entry")
+	je.voucher_type = "Depreciation Entry"
+	je.naming_series = depreciation_series
+	je.company = asset.company
+	je.remark = "Depreciation Entry against asset {0}".format(asset_name)
+
+	je.append("accounts", {
+		"account": depreciation_expense_account,
+		"reference_type": "Asset",
+		"reference_name": asset.name,
+		"cost_center": depreciation_cost_center
+	})
+
+	je.append("accounts", {
+		"account": accumulated_depreciation_account,
+		"reference_type": "Asset",
+		"reference_name": asset.name
+	})
+
+	return je

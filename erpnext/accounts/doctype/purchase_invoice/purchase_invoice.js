@@ -21,8 +21,6 @@ erpnext.accounts.PurchaseInvoice = erpnext.buying.BuyingController.extend({
 			if(!this.frm.doc.supplier && this.frm.doc.credit_to) {
 				this.frm.set_df_property("credit_to", "print_hide", 0);
 			}
-		} else {
-			this.frm.set_value("disable_rounded_total", cint(frappe.sys_defaults.disable_rounded_total));
 		}
 	},
 
@@ -76,6 +74,12 @@ erpnext.accounts.PurchaseInvoice = erpnext.buying.BuyingController.extend({
 					erpnext.utils.make_subscription(doc.doctype, doc.name)
 				}, __("Make"))
 			}
+		}
+
+		if (doc.outstanding_amount > 0 && !cint(doc.is_return)) {
+			cur_frm.add_custom_button(__('Payment Request'), function() {
+				me.make_payment_request()
+			}, __("Make"));
 		}
 
 		if(doc.docstatus===0) {
@@ -242,6 +246,9 @@ erpnext.accounts.PurchaseInvoice = erpnext.buying.BuyingController.extend({
 				price_list: this.frm.doc.buying_price_list
 			}, function() {
 				me.apply_pricing_rule();
+
+				me.frm.doc.apply_tds = me.frm.supplier_tds ? 1 : 0;
+				me.frm.set_df_property("apply_tds", "read_only", me.frm.supplier_tds ? 0 : 1);
 			})
 	},
 
@@ -490,9 +497,23 @@ frappe.ui.form.on("Purchase Invoice", {
 			'Purchase Invoice': 'Debit Note',
 			'Payment Entry': 'Payment'
 		}
+
+		frm.fields_dict['items'].grid.get_field('deferred_expense_account').get_query = function(doc) {
+			return {
+				filters: {
+					'root_type': 'Asset',
+					'company': doc.company,
+					"is_group": 0
+				}
+			}
+		}
 	},
 
 	onload: function(frm) {
+		if(frm.doc.__onload && !frm.doc.__onload.supplier_tds) {
+			me.frm.set_df_property("apply_tds", "read_only", 1);
+		}
+
 		$.each(["warehouse", "rejected_warehouse"], function(i, field) {
 			frm.set_query(field, "items", function() {
 				return {

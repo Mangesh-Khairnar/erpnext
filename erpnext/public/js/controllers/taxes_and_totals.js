@@ -19,8 +19,8 @@ erpnext.taxes_and_totals = erpnext.payments.extend({
 		item.rate = flt(item.rate_with_margin , precision("rate", item));
 
 		if(item.discount_percentage){
-			var discount_value = flt(item.rate_with_margin) * flt(item.discount_percentage) / 100;
-			item.rate = flt((item.rate_with_margin) - (discount_value), precision('rate', item));
+			item.discount_amount = flt(item.rate_with_margin) * flt(item.discount_percentage) / 100;
+			item.rate = flt((item.rate_with_margin) - (item.discount_amount), precision('rate', item));
 		}
 	},
 
@@ -161,7 +161,7 @@ erpnext.taxes_and_totals = erpnext.payments.extend({
 
 			if(cumulated_tax_fraction && !me.discount_amount_applied) {
 				item.net_amount = flt(item.amount / (1 + cumulated_tax_fraction));
-				item.net_rate = flt(item.net_amount / item.qty, precision("net_rate", item));
+				item.net_rate = item.qty ? flt(item.net_amount / item.qty, precision("net_rate", item)) : 0;
 
 				me.set_in_company_currency(item, ["net_rate", "net_amount"]);
 			}
@@ -521,7 +521,7 @@ erpnext.taxes_and_totals = erpnext.payments.extend({
 						item.net_amount = flt(item.net_amount + discount_amount_loss,
 							precision("net_amount", item));
 					}
-					item.net_rate = flt(item.net_amount / item.qty, precision("net_rate", item));
+					item.net_rate = item.qty ? flt(item.net_amount / item.qty, precision("net_rate", item)) : 0;
 					me.set_in_company_currency(item, ["net_rate", "net_amount"]);
 				});
 

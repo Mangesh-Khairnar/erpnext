@@ -12,6 +12,11 @@ class BalanceMismatchError(frappe.ValidationError): pass
 
 class Account(NestedSet):
 	nsm_parent_field = 'parent_account'
+	def on_update(self):
+		if frappe.local.flags.ignore_on_update:
+			return
+		else:
+			super(Account, self).on_update()
 
 	def onload(self):
 		frozen_accounts_modifier = frappe.db.get_value("Accounts Settings", "Accounts Settings",
@@ -119,7 +124,7 @@ class Account(NestedSet):
 
 	def validate_account_currency(self):
 		if not self.account_currency:
-			self.account_currency = frappe.db.get_value("Company", self.company, "default_currency")
+			self.account_currency = frappe.get_cached_value('Company',  self.company,  "default_currency")
 
 		elif self.account_currency != frappe.db.get_value("Account", self.name, "account_currency"):
 			if frappe.db.get_value("GL Entry", {"account": self.name}):
@@ -179,9 +184,9 @@ def get_account_currency(account):
 	if not account:
 		return
 	def generator():
-		account_currency, company = frappe.db.get_value("Account", account, ["account_currency", "company"])
+		account_currency, company = frappe.get_cached_value("Account", account, ["account_currency", "company"])
 		if not account_currency:
-			account_currency = frappe.db.get_value("Company", company, "default_currency")
+			account_currency = frappe.get_cached_value('Company',  company,  "default_currency")
 
 		return account_currency
 
@@ -192,7 +197,7 @@ def on_doctype_update():
 
 def get_account_autoname(account_number, account_name, company):
 	# first validate if company exists
-	company = frappe.db.get_value("Company", company, ["abbr", "name"], as_dict=True)
+	company = frappe.get_cached_value('Company',  company,  ["abbr", "name"], as_dict=True)
 	if not company:
 		frappe.throw(_('Company {0} does not exist').format(company))
 
@@ -212,10 +217,13 @@ def validate_account_number(name, account_number, company):
 @frappe.whitelist()
 def update_account_number(name, account_name, account_number=None):
 
-	account = frappe.db.get_value("Account", name, ["company"], as_dict=True)
+	account = frappe.db.get_value("Account", name, "company", as_dict=True)
+	if not account: return
 	validate_account_number(name, account_number, account.company)
 	if account_number:
 		frappe.db.set_value("Account", name, "account_number", account_number.strip())
+	else:
+		frappe.db.set_value("Account", name, "account_number", "")
 	frappe.db.set_value("Account", name, "account_name", account_name.strip())
 
 	new_name = get_account_autoname(account_number, account_name, account.company)

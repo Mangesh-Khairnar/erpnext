@@ -29,13 +29,21 @@ class Budget(Document):
 	def validate_duplicate(self):
 		budget_against_field = frappe.scrub(self.budget_against)
 		budget_against = self.get(budget_against_field)
-		existing_budget = frappe.db.get_value("Budget", {budget_against_field: budget_against,
-			"fiscal_year": self.fiscal_year, "company": self.company,
-			"name": ["!=", self.name], "docstatus": ["!=", 2]})
-		if existing_budget: 
-			frappe.throw(_("Another Budget record '{0}' already exists against {1} '{2}' for fiscal year {3}")
-				.format(existing_budget, self.budget_against, budget_against, self.fiscal_year), DuplicateBudgetError)
-	
+
+		accounts = [d.account for d in self.accounts] or []
+		existing_budget = frappe.db.sql("""
+			select
+				b.name, ba.account from `tabBudget` b, `tabBudget Account` ba
+			where
+				ba.parent = b.name and b.docstatus < 2 and b.company = %s and %s=%s and
+				b.fiscal_year=%s and b.name != %s and ba.account in (%s) """
+				% ('%s', budget_against_field, '%s', '%s', '%s', ','.join(['%s'] * len(accounts))),
+			(self.company, budget_against, self.fiscal_year, self.name) + tuple(accounts), as_dict=1)
+
+		for d in existing_budget:
+			frappe.throw(_("Another Budget record '{0}' already exists against {1} '{2}' and account '{3}' for fiscal year {4}")
+				.format(d.name, self.budget_against, budget_against, d.account, self.fiscal_year), DuplicateBudgetError)
+
 	def validate_accounts(self):
 		account_list = []
 		for d in self.get('accounts'):
@@ -81,8 +89,8 @@ def validate_expense_against_budget(args):
 
 	if args.get('company') and not args.fiscal_year:
 		args.fiscal_year = get_fiscal_year(args.get('posting_date'), company=args.get('company'))[0]
-		frappe.flags.exception_approver_role = frappe.db.get_value('Company',
-			args.get('company'), 'exception_budget_approver_role')
+		frappe.flags.exception_approver_role = frappe.get_cached_value('Company', 
+			args.get('company'),  'exception_budget_approver_role')
 
 	if not args.account:
 		args.account = args.get("expense_account")
@@ -155,7 +163,7 @@ def compare_expense_with_budget(args, budget_amount, action_for, action, budget_
 	actual_expense = amount or get_actual_expense(args)
 	if actual_expense > budget_amount:
 		diff = actual_expense - budget_amount
-		currency = frappe.db.get_value('Company', args.company, 'default_currency')
+		currency = frappe.get_cached_value('Company',  args.company,  'default_currency')
 
 		msg = _("{0} Budget for Account {1} against {2} {3} is {4}. It will exceed by {5}").format(
 				_(action_for), frappe.bold(args.account), args.budget_against_field, 

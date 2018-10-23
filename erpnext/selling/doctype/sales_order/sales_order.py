@@ -40,6 +40,7 @@ class SalesOrder(SellingController):
 		self.validate_for_items()
 		self.validate_warehouse()
 		self.validate_drop_ship()
+		self.validate_serial_no_based_delivery()
 
 		from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 		make_packing_list(self)
@@ -105,17 +106,19 @@ class SalesOrder(SellingController):
 
 	def validate_delivery_date(self):
 		if self.order_type == 'Sales':
+			delivery_date_list = [d.delivery_date for d in self.get("items") if d.delivery_date]
+			max_delivery_date = max(delivery_date_list) if delivery_date_list else None
 			if not self.delivery_date:
-				delivery_date_list = [d.delivery_date for d in self.get("items") if d.delivery_date]
-				self.delivery_date = max(delivery_date_list) if delivery_date_list else None
+				self.delivery_date = max_delivery_date
 			if self.delivery_date:
 				for d in self.get("items"):
 					if not d.delivery_date:
 						d.delivery_date = self.delivery_date
-
 					if getdate(self.transaction_date) > getdate(d.delivery_date):
 						frappe.msgprint(_("Expected Delivery Date should be after Sales Order Date"),
 							indicator='orange', title=_('Warning'))
+				if getdate(self.delivery_date) != getdate(max_delivery_date):
+					self.delivery_date = max_delivery_date
 			else:
 				frappe.throw(_("Please enter Delivery Date"))
 
@@ -133,7 +136,7 @@ class SalesOrder(SellingController):
 		super(SalesOrder, self).validate_warehouse()
 
 		for d in self.get("items"):
-			if (frappe.db.get_value("Item", d.item_code, "is_stock_item") == 1 or
+			if (frappe.get_cached_value("Item", d.item_code, "is_stock_item") == 1 or
 				(self.has_product_bundle(d.item_code) and self.product_bundle_has_stock_item(d.item_code))) \
 				and not d.warehouse and not cint(d.delivered_by_supplier):
 				frappe.throw(_("Delivery warehouse required for stock item {0}").format(d.item_code),
@@ -205,7 +208,7 @@ class SalesOrder(SellingController):
 	def check_credit_limit(self):
 		# if bypass credit limit check is set to true (1) at sales order level,
 		# then we need not to check credit limit and vise versa
-		if not cint(frappe.db.get_value("Customer", self.customer, "bypass_credit_limit_check_at_sales_order")):
+		if not cint(frappe.get_cached_value("Customer", self.customer, "bypass_credit_limit_check_at_sales_order")):
 			check_credit_limit(self.customer, self.company)
 
 	def check_nextdoc_docstatus(self):
@@ -278,7 +281,7 @@ class SalesOrder(SellingController):
 		item_wh_list = []
 		def _valid_for_reserve(item_code, warehouse):
 			if item_code and warehouse and [item_code, warehouse] not in item_wh_list \
-				and frappe.db.get_value("Item", item_code, "is_stock_item"):
+				and frappe.get_cached_value("Item", item_code, "is_stock_item"):
 					item_wh_list.append([item_code, warehouse])
 
 		for d in self.get("items"):
@@ -302,6 +305,7 @@ class SalesOrder(SellingController):
 		self.validate_po()
 		self.validate_drop_ship()
 		self.validate_supplier_after_submit()
+		self.validate_delivery_date()
 
 	def validate_supplier_after_submit(self):
 		"""Check that supplier is the same after submit if PO is already made"""
@@ -397,6 +401,32 @@ class SalesOrder(SellingController):
 
 			d.set("delivery_date", _get_delivery_date(reference_delivery_date,
 				reference_doc.transaction_date, self.transaction_date))
+
+	def validate_serial_no_based_delivery(self):
+		reserved_items = []
+		normal_items = []
+		for item in self.items:
+			if item.ensure_delivery_based_on_produced_serial_no:
+				if item.item_code in normal_items:
+					frappe.throw(_("Cannot ensure delivery by Serial No as \
+					Item {0} is added with and without Ensure Delivery by \
+					Serial No.").format(item.item_code))
+				if item.item_code not in reserved_items:
+					if not frappe.get_cached_value("Item", item.item_code, "has_serial_no"):
+						frappe.throw(_("Item {0} has no Serial No. Only serilialized items \
+						can have delivery based on Serial No").format(item.item_code))
+					if not frappe.db.exists("BOM", {"item": item.item_code, "is_active": 1}):
+						frappe.throw(_("No active BOM found for item {0}. Delivery by \
+						Serial No cannot be ensured").format(item.item_code))
+				reserved_items.append(item.item_code)
+			else:
+				normal_items.append(item.item_code)
+
+			if not item.ensure_delivery_based_on_produced_serial_no and \
+				item.item_code in reserved_items:
+				frappe.throw(_("Cannot ensure delivery by Serial No as \
+				Item {0} is added with and without Ensure Delivery by \
+				Serial No.").format(item.item_code))
 
 def get_list_context(context=None):
 	from erpnext.controllers.website_list_for_contact import get_list_context
@@ -581,8 +611,8 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 		if source_parent.project:
 			target.cost_center = frappe.db.get_value("Project", source_parent.project, "cost_center")
 		if not target.cost_center and target.item_code:
-			item = get_item_defaults(target.item_code, target.company)
-			item_group = get_item_group_defaults(target.item_code, target.company)
+			item = get_item_defaults(target.item_code, source_parent.company)
+			item_group = get_item_group_defaults(target.item_code, source_parent.company)
 			target.cost_center = item.get("selling_cost_center") \
 				or item_group.get("selling_cost_center")
 
@@ -700,14 +730,14 @@ def get_events(start, end, filters=None):
 	return data
 
 @frappe.whitelist()
-def make_purchase_order_for_drop_shipment(source_name, for_supplier, target_doc=None):
+def make_purchase_order_for_drop_shipment(source_name, for_supplier=None, target_doc=None):
 	def set_missing_values(source, target):
-		target.supplier = for_supplier
+		target.supplier = supplier
 		target.apply_discount_on = ""
 		target.additional_discount_percentage = 0.0
 		target.discount_amount = 0.0
 
-		default_price_list = frappe.get_value("Supplier", for_supplier, "default_price_list")
+		default_price_list = frappe.get_value("Supplier", supplier, "default_price_list")
 		if default_price_list:
 			target.buying_price_list = default_price_list
 
@@ -737,41 +767,61 @@ def make_purchase_order_for_drop_shipment(source_name, for_supplier, target_doc=
 		target.stock_qty = (flt(source.qty) - flt(source.ordered_qty)) * flt(source.conversion_factor)
 		target.project = source_parent.project
 
-	doclist = get_mapped_doc("Sales Order", source_name, {
-		"Sales Order": {
-			"doctype": "Purchase Order",
-			"field_no_map": [
-				"address_display",
-				"contact_display",
-				"contact_mobile",
-				"contact_email",
-				"contact_person",
-				"taxes_and_charges"
-			],
-			"validation": {
-				"docstatus": ["=", 1]
-			}
-		},
-		"Sales Order Item": {
-			"doctype": "Purchase Order Item",
-			"field_map":  [
-				["name", "sales_order_item"],
-				["parent", "sales_order"],
-				["stock_uom", "stock_uom"],
-				["uom", "uom"],
-				["conversion_factor", "conversion_factor"],
-				["delivery_date", "schedule_date"]
-			],
-			"field_no_map": [
-				"rate",
-				"price_list_rate"
-			],
-			"postprocess": update_item,
-			"condition": lambda doc: doc.ordered_qty < doc.qty and doc.supplier == for_supplier
-		}
-	}, target_doc, set_missing_values)
+	suppliers =[]
+	if for_supplier:
+		suppliers.append(for_supplier)
+	else:
+		sales_order = frappe.get_doc("Sales Order", source_name)
+		for item in sales_order.items:
+			if item.supplier and item.supplier not in suppliers:
+				suppliers.append(item.supplier)
+	for supplier in suppliers:
+		po =frappe.get_list("Purchase Order", filters={"sales_order":source_name, "supplier":supplier, "docstatus": ("<", "2")})
+		if len(po) == 0:
+			doc = get_mapped_doc("Sales Order", source_name, {
+				"Sales Order": {
+					"doctype": "Purchase Order",
+					"field_no_map": [
+						"address_display",
+						"contact_display",
+						"contact_mobile",
+						"contact_email",
+						"contact_person",
+						"taxes_and_charges"
+					],
+					"validation": {
+						"docstatus": ["=", 1]
+					}
+				},
+				"Sales Order Item": {
+					"doctype": "Purchase Order Item",
+					"field_map":  [
+						["name", "sales_order_item"],
+						["parent", "sales_order"],
+						["stock_uom", "stock_uom"],
+						["uom", "uom"],
+						["conversion_factor", "conversion_factor"],
+						["delivery_date", "schedule_date"]
+			 		],
+					"field_no_map": [
+						"rate",
+						"price_list_rate"
+					],
+					"postprocess": update_item,
+					"condition": lambda doc: doc.ordered_qty < doc.qty and doc.supplier == supplier
+				}
+			}, target_doc, set_missing_values)
+			if not for_supplier:
+				doc.insert()
+		else:
+			suppliers =[]
+	if suppliers:
+		if not for_supplier:
+			frappe.db.commit()
+		return doc
+	else:
+		frappe.msgprint(_("PO already created for all sales order items"))
 
-	return doclist
 
 @frappe.whitelist()
 def get_supplier(doctype, txt, searchfield, start, page_len, filters):
@@ -787,6 +837,8 @@ def get_supplier(doctype, txt, searchfield, start, page_len, filters):
 			and ({key} like %(txt)s
 				or supplier_name like %(txt)s)
 			and name in (select supplier from `tabSales Order Item` where parent = %(parent)s)
+			and name not in (select supplier from `tabPurchase Order` po inner join `tabPurchase Order Item` poi
+			     on po.name=poi.parent where po.docstatus<2 and poi.sales_order=%(parent)s)			
 		order by
 			if(locate(%(_txt)s, name), locate(%(_txt)s, name), 99999),
 			if(locate(%(_txt)s, supplier_name), locate(%(_txt)s, supplier_name), 99999),

@@ -3,6 +3,8 @@ from frappe import _
 from frappe.utils.nestedset import rebuild_tree
 
 def execute():
+	frappe.local.lang = frappe.db.get_default("lang") or 'en'
+
 	for doctype in ['department', 'leave_period', 'staffing_plan', 'job_opening', 'payroll_entry']:
 		frappe.reload_doc("hr", "doctype", doctype)
 
@@ -16,7 +18,7 @@ def execute():
 
 	for department in departments:
 		# skip root node
-		if department.name == _("All Departments"):
+		if _(department.name) == _("All Departments"):
 			continue
 
 		# for each company, create a copy of the doc
@@ -30,12 +32,14 @@ def execute():
 			comp_dict[company.name][department.name] = copy_doc.name
 
 	rebuild_tree('Department', 'parent_department')
-	doctypes = ["Asset", "Employee", "Leave Period", "Payroll Entry", "Staffing Plan", "Job Opening"]
+	doctypes = ["Asset", "Employee", "Payroll Entry", "Staffing Plan", "Job Opening"]
 
 	for d in doctypes:
 		update_records(d, comp_dict)
 
 	update_instructors(comp_dict)
+
+	frappe.local.lang = 'en'
 
 def update_records(doctype, comp_dict):
 	when_then = []
