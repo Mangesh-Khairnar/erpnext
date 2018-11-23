@@ -681,7 +681,7 @@ class TestSalesOrder(unittest.TestCase):
 		se.cancel()
 		self.assertFalse(frappe.db.exists("Serial No", {"sales_order": so.name}))
 		
-	def test_creation_of_sales_ledger_entry_on_submit(self):
+	def test_creation_of_sales_ledger_entry(self):
 		sales_order = make_sales_order()		
 		sales_ledger_entry = frappe.get_all('Sales Ledger Entry', fields='*', filters=dict(sales_order=sales_order.name))
 		

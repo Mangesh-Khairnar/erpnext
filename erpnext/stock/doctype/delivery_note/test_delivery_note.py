@@ -637,7 +637,7 @@ class TestDeliveryNote(unittest.TestCase):
 
 		set_perpetual_inventory(0, company)
 
-	def test_creation_of_sales_ledger_entry_on_submit(self):
+	def test_creation_of_sales_ledger_entry(self):
 		sales_order = make_sales_order()
 		delivery_note = create_dn_against_so(sales_order.name, delivered_qty=2)
 		sales_ledger_entry = frappe.get_all('Sales Ledger Entry', fields='*', filters=dict(delivery_note=delivery_note.name))

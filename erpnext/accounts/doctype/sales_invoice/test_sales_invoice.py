@@ -12,6 +12,7 @@ from erpnext.accounts.doctype.purchase_invoice.test_purchase_invoice import unli
 from erpnext.accounts.doctype.pos_profile.test_pos_profile import make_pos_profile
 from erpnext.stock.doctype.purchase_receipt.test_purchase_receipt import set_perpetual_inventory
 from erpnext.exceptions import InvalidAccountCurrency, InvalidCurrency
+from erpnext.selling.doctype.sales_order.test_sales_order import make_sales_order, create_dn_against_so
 from erpnext.stock.doctype.serial_no.serial_no import SerialNoWarehouseError
 from frappe.model.naming import make_autoname
 from erpnext.accounts.doctype.account.test_account import get_inventory_account
@@ -356,6 +357,34 @@ class TestSalesInvoice(unittest.TestCase):
 
 		self.assertFalse(gle)
 
+	def test_creation_of_sales_ledger_entry(self):
+		sales_order = make_sales_order()
+		delivery_note = create_dn_against_so(sales_order.name, delivered_qty=2)
+		sales_invoice = create_sales_invoice(delivery_note = delivery_note.name, sales_order = sales_order.name)
+		sales_ledger_entry = frappe.get_all('Sales Ledger Entry', fields='*', 
+					filters=dict(sales_invoice=sales_invoice.name))
+		
+		self.assertEquals(len(sales_ledger_entry), 1)
+		self.assertEquals(sales_ledger_entry[0].item, sales_invoice.items[0].item_code)
+		self.assertEquals(sales_ledger_entry[0].qty, sales_invoice.items[0].qty)
+		self.assertEquals(sales_ledger_entry[0].amount, sales_invoice.items[0].amount)
+		self.assertEquals(sales_ledger_entry[0].sales_order, sales_invoice.items[0].sales_order)
+		self.assertEquals(sales_ledger_entry[0].delivery_note, sales_invoice.items[0].delivery_note)
+		self.assertEquals(sales_ledger_entry[0].sales_invoice, sales_invoice.items[0].parent)
+		# check if reverse Sales Ledger Entry is created on cancellation
+		sales_invoice.cancel()
+		
+		sales_ledger_entry = frappe.get_all('Sales Ledger Entry', fields='*', 
+					filters=dict(sales_invoice=sales_invoice.name))
+
+		self.assertEquals(len(sales_ledger_entry), 2)
+		self.assertEquals(sales_ledger_entry[0].item, sales_invoice.items[0].item_code)
+		self.assertEquals(sales_ledger_entry[0].qty, -sales_invoice.items[0].qty)
+		self.assertEquals(sales_ledger_entry[0].amount, -sales_invoice.items[0].amount)
+		self.assertEquals(sales_ledger_entry[0].sales_order, sales_invoice.items[0].sales_order)
+		self.assertEquals(sales_ledger_entry[0].delivery_note, sales_invoice.items[0].delivery_note)
+		self.assertEquals(sales_ledger_entry[0].sales_invoice, sales_invoice.items[0].parent)
+	
 	def test_tax_calculation_with_multiple_items(self):
 		si = create_sales_invoice(qty=84, rate=4.6, do_not_save=True)
 		item_row = si.get("items")[0]
@@ -823,7 +852,7 @@ class TestSalesInvoice(unittest.TestCase):
 		pr.submit()
 
 	def _insert_delivery_note(self):
-		from erpnext.stock.doctype.delivery_note.test_delivery_note import test_records \
+		from erpnext.stock.doctype.sales_invoice.test_delivery_note import test_records \
 			as dn_test_records
 		dn = frappe.copy_doc(dn_test_records[0])
 		dn.naming_series = "_T-Delivery Note-"
@@ -928,8 +957,8 @@ class TestSalesInvoice(unittest.TestCase):
 			serial numbers are same
 		"""
 		from erpnext.stock.doctype.stock_entry.test_stock_entry import make_serialized_item
-		from erpnext.stock.doctype.delivery_note.test_delivery_note import create_delivery_note
-		from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_invoice
+		from erpnext.stock.doctype.sales_invoice.test_delivery_note import create_delivery_note
+		from erpnext.stock.doctype.sales_invoice.sales_invoice import make_sales_invoice
 		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
 
 		se = make_serialized_item()
@@ -1527,7 +1556,9 @@ def create_sales_invoice(**args):
 		"income_account": "Sales - _TC",
 		"expense_account": "Cost of Goods Sold - _TC",
 		"cost_center": "_Test Cost Center - _TC",
-		"serial_no": args.serial_no
+		"serial_no": args.serial_no,
+		"delivery_note": args.delivery_note or "",
+		"sales_order": args.sales_order or ""
 	})
 
 	if not args.do_not_save:
