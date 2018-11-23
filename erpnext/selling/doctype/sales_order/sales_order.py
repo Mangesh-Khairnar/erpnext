@@ -19,6 +19,7 @@ from erpnext.selling.doctype.customer.customer import check_credit_limit
 from erpnext.stock.doctype.item.item import get_item_defaults
 from erpnext.setup.doctype.item_group.item_group import get_item_group_defaults
 from erpnext.manufacturing.doctype.production_plan.production_plan import get_items_for_material_requests
+from erpnext.selling.sales_ledger import get_sales_ledger_entry, create_sales_ledger_entry
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -179,7 +180,7 @@ class SalesOrder(SellingController):
 
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype, self.company, self.base_grand_total, self)
 		self.update_project()
-		self.create_sales_ledger_entry()
+		create_sales_ledger_entry(self.items)
 		self.update_prevdoc_status('submit')
 
 		self.update_blanket_order()
@@ -192,7 +193,7 @@ class SalesOrder(SellingController):
 		self.check_nextdoc_docstatus()
 		self.update_reserved_qty()
 		self.update_project()
-		self.create_sales_ledger_entry(submit=False)
+		create_sales_ledger_entry(self.items, submit=False)
 		self.update_prevdoc_status('cancel')
 
 		frappe.db.set(self, 'status', 'Cancelled')
@@ -209,16 +210,14 @@ class SalesOrder(SellingController):
 			project.update_sales_amount()
 			project.save()
 			
-	def create_sales_ledger_entry(self, submit=True):
-		for item in self.items:
-			frappe.get_doc(dict(
-				doctype = 'Sales Ledger Entry',
-				item = item.item_code,
-				qty = item.qty * (1 if submit else -1),
-				amount = item.base_amount * (1 if submit else -1),
-				sales_order = self.name,
-				is_order = 1
-			)).insert()
+	def get_sales_ledger_entry(self, item, submit=True):
+		args = dict(
+			creative = self.parent,
+			sales_order = item.parent,
+			sales_order_item = item.name,
+			is_order = 1
+		)
+		return get_sales_ledger_entry(item, submit, args)
 
 	def check_credit_limit(self):
 		# if bypass credit limit check is set to true (1) at sales order level,

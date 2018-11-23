@@ -5,15 +5,17 @@ from __future__ import unicode_literals
 
 import frappe
 import frappe.defaults
-from erpnext.controllers.selling_controller import SellingController
-from erpnext.stock.doctype.batch.batch import set_batch_nos
-from erpnext.stock.doctype.serial_no.serial_no import get_delivery_note_serial_no
 from frappe import _
 from frappe.contacts.doctype.address.address import get_company_address
 from frappe.desk.notifications import clear_doctype_notifications
 from frappe.model.mapper import get_mapped_doc
 from frappe.model.utils import get_fetch_values
 from frappe.utils import cint, flt
+
+from erpnext.controllers.selling_controller import SellingController
+from erpnext.stock.doctype.batch.batch import set_batch_nos
+from erpnext.stock.doctype.serial_no.serial_no import get_delivery_note_serial_no
+from erpnext.selling.sales_ledger import get_sales_ledger_entry, create_sales_ledger_entry
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -221,7 +223,7 @@ class DeliveryNote(SellingController):
 		# because updating reserved qty in bin depends upon updated delivered qty in SO
 		self.update_stock_ledger()
 		self.make_gl_entries()
-		self.create_sales_ledger_entry()
+		create_sales_ledger_entry(self.items)
 		
 	def on_cancel(self):
 		self.check_close_sales_order("against_sales_order")
@@ -237,7 +239,7 @@ class DeliveryNote(SellingController):
 		self.cancel_packing_slips()
 
 		self.make_gl_entries_on_cancel()
-		self.create_sales_ledger_entry(submit=False)
+		create_sales_ledger_entry(self.items, submit=False)
 
 	def check_credit_limit(self):
 		from erpnext.selling.doctype.customer.customer import check_credit_limit
@@ -329,18 +331,17 @@ class DeliveryNote(SellingController):
 			frappe.msgprint(_("Credit Note {0} has been created automatically").format(return_invoice.name))
 		except:
 			frappe.throw(_("Could not create Credit Note automatically, please uncheck 'Issue Credit Note' and submit again"))
-			
-	def create_sales_ledger_entry(self, submit=True):
-		for item in self.items:
-			frappe.get_doc(dict(
-				doctype = 'Sales Ledger Entry',
-				item = item.item_code,
-				qty = item.qty * (1 if submit else -1),
-				amount = item.base_amount * (1 if submit else -1),
-				sales_order = item.against_sales_order,
-				delivery_note = self.name,
-				is_delivery = 1
-			)).insert()
+			 
+	def get_sales_ledger_entry(self, item, submit=True):
+		args = dict(
+				sales_order = item.against_sales_order or "",
+				sales_order_item = item.so_detail or "",
+				delivery_note = item.parent or "",
+				delivery_note_item = item.name or "",
+				is_delivery = 1 
+			)
+		return get_sales_ledger_entry(item, submit, args)	
+
 
 def update_billed_amount_based_on_so(so_detail, update_modified=True):
 	# Billed against Sales Order directly

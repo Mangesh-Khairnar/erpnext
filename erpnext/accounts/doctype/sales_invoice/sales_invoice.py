@@ -24,7 +24,7 @@ from erpnext.accounts.general_ledger import get_round_off_account_and_cost_cente
 from erpnext.accounts.doctype.loyalty_program.loyalty_program import \
 	get_loyalty_program_details_with_points, get_loyalty_details, validate_loyalty_points
 from erpnext.accounts.deferred_revenue import validate_service_stop_date
-
+from erpnext.selling.sales_ledger import get_sales_ledger_entry, create_sales_ledger_entry
 from erpnext.healthcare.utils import manage_invoice_submit_cancel
 
 from six import iteritems
@@ -152,6 +152,7 @@ class SalesInvoice(SellingController):
 			# NOTE status updating bypassed for is_return
 			self.status_updater = []
 
+		create_sales_ledger_entry(self.items)
 		self.update_status_updater_args()
 		self.update_prevdoc_status()
 		self.update_billing_status_in_dn()
@@ -216,6 +217,7 @@ class SalesInvoice(SellingController):
 			# NOTE status updating bypassed for is_return
 			self.status_updater = []
 
+		create_sales_ledger_entry(self.items, submit=False)
 		self.update_status_updater_args()
 		self.update_prevdoc_status()
 		self.update_billing_status_in_dn()
@@ -1017,6 +1019,17 @@ class SalesInvoice(SellingController):
 			project.update_billed_amount()
 			project.save()
 
+	def get_sales_ledger_entry(self, item, submit=True):
+		args = dict(
+                sales_order = item.sales_order or "",
+                sales_order_item = item.so_detail or "",
+                delivery_note = item.delivery_note or "",
+                delivery_note_item = item.dn_detail or "",
+                sales_invoice = item.parent,
+				is_delivery = 1 if self.update_stock else 0,
+                is_billing = 1
+            )
+		return get_sales_ledger_entry(item, submit, args)	
 
 	def verify_payment_amount_is_positive(self):
 		for entry in self.payments:
