@@ -465,6 +465,34 @@ class TestPurchaseOrder(unittest.TestCase):
 		self.assertEquals(se_items, supplied_items)
 		update_backflush_based_on("BOM")
 
+	def test_creation_of_purchase_ledger_entry(self):
+		material_request = make_material_request()
+		purchase_order = make_purchase_order(material_request.name)
+		purchase_order.supplier = "_Test Supplier"
+		purchase_order.save()
+		purchase_order.submit()		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_order=purchase_order.name))
+		
+		self.assertEquals(len(purchase_ledger_entry), 1)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_order.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, purchase_order.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, purchase_order.items[0].amount)
+		self.assertEquals(purchase_ledger_entry[0].material_request, purchase_order.items[0].material_request)
+
+		# check if reverse Purchase Ledger Entry is created on cancellation
+		purchase_order.cancel()
+		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_order=purchase_order.name))
+
+		self.assertEquals(len(purchase_ledger_entry), 2)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_order.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, -purchase_order.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, -purchase_order.items[0].amount)
+		self.assertEquals(purchase_ledger_entry[0].material_request, purchase_order.items[0].material_request)
+	
+	def tearDown(self):
+		frappe.db.sql("""DELETE FROM `TabPurchase Ledger Entry`""")
+
 def make_subcontracted_item(item_code):
 	from erpnext.manufacturing.doctype.production_plan.test_production_plan import make_bom
 

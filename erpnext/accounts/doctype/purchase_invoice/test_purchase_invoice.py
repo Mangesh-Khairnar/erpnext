@@ -26,6 +26,7 @@ class TestPurchaseInvoice(unittest.TestCase):
 
 	def tearDown(self):
 		unlink_payment_on_cancel_of_invoice(0)
+		frappe.db.sql("""DELETE FROM `TabPurchase Ledger Entry`""")		
 
 	def test_gl_entries_without_perpetual_inventory(self):
 		frappe.db.set_value("Company", "_Test Company", "round_off_account", "Round Off - _TC")
@@ -849,7 +850,25 @@ class TestPurchaseInvoice(unittest.TestCase):
 		for gle in gl_entries:
 			self.assertEqual(expected_values[gle.account]["cost_center"], gle.cost_center)
 
+	
+	def test_creation_of_purchase_ledger_entry(self):
+		purchase_invoice = make_purchase_invoice()		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_invoice=purchase_invoice.name))
+		
+		self.assertEquals(len(purchase_ledger_entry), 1)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_invoice.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, purchase_invoice.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, purchase_invoice.items[0].amount)
 
+		# check if reverse Purchase Ledger Entry is created on cancellation
+		purchase_invoice.cancel()		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_invoice=purchase_invoice.name))
+
+		self.assertEquals(len(purchase_ledger_entry), 2)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_invoice.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, -purchase_invoice.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, -purchase_invoice.items[0].amount)
+	
 def unlink_payment_on_cancel_of_invoice(enable=1):
 	accounts_settings = frappe.get_doc("Accounts Settings")
 	accounts_settings.unlink_payment_on_cancellation_of_invoice = enable

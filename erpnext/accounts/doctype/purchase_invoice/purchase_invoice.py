@@ -23,6 +23,7 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import validate_inter_
 	unlink_inter_company_invoice
 from erpnext.accounts.doctype.tax_withholding_category.tax_withholding_category import get_party_tax_withholding_details
 from erpnext.accounts.deferred_revenue import validate_service_stop_date
+from erpnext.buying.purchase_ledger import get_purchase_ledger_entry, create_purchase_ledger_entry
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -315,6 +316,7 @@ class PurchaseInvoice(BuyingController):
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
 			self.company, self.base_grand_total)
 
+		create_purchase_ledger_entry(self.items)
 		if not self.is_return:
 			self.update_against_document_in_jv()
 			self.update_prevdoc_status()
@@ -741,7 +743,7 @@ class PurchaseInvoice(BuyingController):
 		self.check_for_closed_status()
 
 		self.update_status_updater_args()
-
+		create_purchase_ledger_entry(self.items, submit=False)
 		if not self.is_return:
 			from erpnext.accounts.utils import unlink_ref_doc_from_payment_entries
 			if frappe.db.get_single_value('Accounts Settings', 'unlink_payment_on_cancellation_of_invoice'):
@@ -841,6 +843,19 @@ class PurchaseInvoice(BuyingController):
 
 		# calculate totals again after applying TDS
 		self.calculate_taxes_and_totals()
+
+	def get_purchase_ledger_entry(self, item, submit=True):
+		args = dict(
+			material_request = frappe.get_value("Purchase Order Item", item.po_detail,["material_request"]),
+			purchase_order = item.purchase_order,
+			purchase_order_item = item.po_detail,
+			purchase_receipt = item.purchase_receipt,
+			purchase_receipt_item = item.pr_detail,
+			purchase_invoice = item.parent,
+			is_receipt = 1
+			)
+		return get_purchase_ledger_entry(item, submit, args)
+	
 
 @frappe.whitelist()
 def make_debit_note(source_name, target_doc=None):

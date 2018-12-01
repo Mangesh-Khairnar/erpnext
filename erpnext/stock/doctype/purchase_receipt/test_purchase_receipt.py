@@ -7,15 +7,18 @@ import unittest
 import frappe, erpnext
 import frappe.defaults
 from frappe.utils import cint, flt, cstr, today, random_string
-from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 from erpnext import set_perpetual_inventory
 from erpnext.stock.doctype.serial_no.serial_no import SerialNoDuplicateError
 from erpnext.accounts.doctype.account.test_account import get_inventory_account
 from erpnext.stock.doctype.item.test_item import make_item
+from erpnext.buying.doctype.purchase_order.test_purchase_order import create_purchase_order
 from six import iteritems
 class TestPurchaseReceipt(unittest.TestCase):
 	def setUp(self):
 		frappe.db.set_value("Buying Settings", None, "allow_multiple_items", 1)
+
+	def tearDown(self):
+		frappe.db.sql("""DELETE FROM `TabPurchase Ledger Entry`""")
 
 	def test_make_purchase_invoice(self):
 		pr = make_purchase_receipt(do_not_save=True)
@@ -90,6 +93,7 @@ class TestPurchaseReceipt(unittest.TestCase):
 		set_perpetual_inventory(0, pr.company)
 
 	def test_subcontracting(self):
+		from erpnext.stock.doctype.purchase_receipt.purchase_receipt import make_purchase_invoice
 		from erpnext.stock.doctype.stock_entry.test_stock_entry import make_stock_entry
 
 		frappe.db.set_value("Buying Settings", None, "backflush_raw_materials_of_subcontract_based_on", "BOM")
@@ -230,7 +234,6 @@ class TestPurchaseReceipt(unittest.TestCase):
 
 	def test_pr_billing_status(self):
 		# PO -> PR1 -> PI and PO -> PI and PO -> PR2
-		from erpnext.buying.doctype.purchase_order.test_purchase_order import create_purchase_order
 		from erpnext.buying.doctype.purchase_order.purchase_order \
 			import make_purchase_receipt, make_purchase_invoice as make_purchase_invoice_from_po
 
@@ -243,7 +246,7 @@ class TestPurchaseReceipt(unittest.TestCase):
 		pr1.get("items")[0].qty = 2
 		pr1.submit()
 
-		pi1 = make_purchase_invoice(pr1.name)
+		pi1 = make_purchase_invoice_from_po(pr1.name)
 		pi1.submit()
 
 		pr1.load_from_db()
@@ -404,6 +407,33 @@ class TestPurchaseReceipt(unittest.TestCase):
 			self.assertEqual(expected_values[gle.account]["cost_center"], gle.cost_center)
 
 		set_perpetual_inventory(0, pr.company)
+
+	def test_creation_of_purchase_ledger_entry(self):
+		from erpnext.buying.doctype.purchase_order.purchase_order \
+			import make_purchase_receipt
+		purchase_order = create_purchase_order()
+		purchase_receipt = make_purchase_receipt(purchase_order.name)
+		purchase_receipt.save()
+		purchase_receipt.submit()		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_receipt=purchase_receipt.name))
+		
+		self.assertEquals(len(purchase_ledger_entry), 1)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_receipt.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, purchase_receipt.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, purchase_receipt.items[0].amount)
+		self.assertEquals(purchase_ledger_entry[0].purchase_order, purchase_receipt.items[0].purchase_order)
+
+		# check if reverse Purchase Ledger Entry is created on cancellation
+		purchase_receipt.cancel()
+		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(purchase_receipt=purchase_receipt.name))
+
+		self.assertEquals(len(purchase_ledger_entry), 2)
+		self.assertEquals(purchase_ledger_entry[0].item, purchase_receipt.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, -purchase_receipt.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, -purchase_receipt.items[0].amount)
+		self.assertEquals(purchase_ledger_entry[0].purchase_order, purchase_receipt.items[0].purchase_order)
+	
 
 def get_gl_entries(voucher_type, voucher_no):
 	return frappe.db.sql("""select account, debit, credit, cost_center

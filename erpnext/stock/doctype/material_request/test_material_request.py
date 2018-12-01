@@ -14,6 +14,9 @@ class TestMaterialRequest(unittest.TestCase):
 	def setUp(self):
 		erpnext.set_perpetual_inventory(0)
 
+	def tearDown(self):
+		frappe.db.sql("""DELETE FROM `tabPurchase Ledger Entry`""")	
+
 	def test_make_purchase_order(self):
 		from erpnext.stock.doctype.material_request.material_request import make_purchase_order
 
@@ -98,6 +101,26 @@ class TestMaterialRequest(unittest.TestCase):
 			})
 		se.insert()
 		se.submit()
+
+	def test_creation_of_purchase_ledger_entry(self):
+		material_request = make_material_request()		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(material_request=material_request.name))
+		
+		self.assertEquals(len(purchase_ledger_entry), 1)
+		self.assertEquals(purchase_ledger_entry[0].item, material_request.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, material_request.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, material_request.items[0].amount)
+
+		# check if reverse Purchase Ledger Entry is created on cancellation
+		material_request.cancel()
+		
+		purchase_ledger_entry = frappe.get_all('Purchase Ledger Entry', fields='*', filters=dict(material_request=material_request.name))
+
+		self.assertEquals(len(purchase_ledger_entry), 2)
+		self.assertEquals(purchase_ledger_entry[0].item, material_request.items[0].item_code)
+		self.assertEquals(purchase_ledger_entry[0].qty, -material_request.items[0].qty)
+		self.assertEquals(purchase_ledger_entry[0].amount, -material_request.items[0].amount)
+		
 
 	def test_cannot_stop_cancelled_material_request(self):
 		mr = frappe.copy_doc(test_records[0])

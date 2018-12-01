@@ -15,6 +15,7 @@ from erpnext.controllers.buying_controller import BuyingController
 from erpnext.manufacturing.doctype.work_order.work_order import get_item_details
 from erpnext.buying.utils import check_for_closed_status, validate_for_items
 from erpnext.stock.doctype.item.item import get_item_defaults
+from erpnext.buying.purchase_ledger import get_purchase_ledger_entry, create_purchase_ledger_entry
 
 from six import string_types
 
@@ -89,6 +90,7 @@ class MaterialRequest(BuyingController):
 		# frappe.db.set(self, 'status', 'Submitted')
 		self.update_requested_qty()
 		self.update_requested_qty_in_production_plan()
+		create_purchase_ledger_entry(self.items)
 		if self.material_request_type == 'Purchase':
 			self.validate_budget()
 
@@ -143,6 +145,7 @@ class MaterialRequest(BuyingController):
 
 	def on_cancel(self):
 		self.update_requested_qty()
+		create_purchase_ledger_entry(self.items, submit=False)
 		self.update_requested_qty_in_production_plan()
 
 	def update_completed_qty(self, mr_items=None, update_modified=True):
@@ -210,6 +213,13 @@ class MaterialRequest(BuyingController):
 			doc = frappe.get_doc('Production Plan', production_plan)
 			doc.set_status()
 			doc.db_set('status', doc.status)
+
+	def get_purchase_ledger_entry(self, item, submit=True):
+		args = dict(
+			material_request = item.parent,
+			is_request = 1
+			)
+		return get_purchase_ledger_entry(item, submit, args)
 
 def update_completed_and_requested_qty(stock_entry, method):
 	if stock_entry.doctype == "Stock Entry":

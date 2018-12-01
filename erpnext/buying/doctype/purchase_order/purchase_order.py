@@ -13,10 +13,12 @@ from erpnext.stock.stock_balance import update_bin_qty, get_ordered_qty
 from frappe.desk.notifications import clear_doctype_notifications
 from erpnext.buying.utils import validate_for_items, check_for_closed_status
 from erpnext.stock.utils import get_bin
-from erpnext.accounts.party import get_party_account_currency
-from six import string_types
 from erpnext.stock.doctype.item.item import get_item_defaults
 from erpnext.setup.doctype.item_group.item_group import get_item_group_defaults
+from erpnext.accounts.party import get_party_account_currency
+from erpnext.buying.purchase_ledger import get_purchase_ledger_entry, create_purchase_ledger_entry
+
+from six import string_types
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
@@ -206,6 +208,7 @@ class PurchaseOrder(BuyingController):
 			self.update_status_updater()
 
 		self.update_prevdoc_status()
+		create_purchase_ledger_entry(self.items)
 		self.update_requested_qty()
 		self.update_ordered_qty()
 		self.validate_budget()
@@ -235,6 +238,7 @@ class PurchaseOrder(BuyingController):
 
 		frappe.db.set(self,'status','Cancelled')
 
+		create_purchase_ledger_entry(self.items, submit=False)
 		self.update_prevdoc_status()
 
 		# Must be called after updating ordered qty in Material Request
@@ -299,6 +303,16 @@ class PurchaseOrder(BuyingController):
 			self.db_set("per_received", flt(received_qty/total_qty) * 100, update_modified=False)
 		else:
 			self.db_set("per_received", 0, update_modified=False)
+
+	def get_purchase_ledger_entry(self, item, submit=True):
+			args = dict(
+				material_request = item.material_request,
+				purchase_order = item.parent,
+				purchase_order_item = item.name,
+				is_order = 1
+				)
+			return get_purchase_ledger_entry(item, submit, args)
+		
 
 def item_last_purchase_rate(name, conversion_rate, item_code, conversion_factor= 1.0):
 	"""get last purchase rate for an item"""

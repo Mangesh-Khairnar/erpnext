@@ -14,6 +14,7 @@ from erpnext.accounts.utils import get_account_currency
 from frappe.desk.notifications import clear_doctype_notifications
 from erpnext.buying.utils import check_for_closed_status
 from erpnext.assets.doctype.asset.asset import get_asset_account
+from erpnext.buying.purchase_ledger import get_purchase_ledger_entry, create_purchase_ledger_entry
 from six import iteritems
 
 form_grid_templates = {
@@ -119,6 +120,7 @@ class PurchaseReceipt(BuyingController):
 		frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
 			self.company, self.base_grand_total)
 
+		create_purchase_ledger_entry(self.items)
 		self.update_prevdoc_status()
 		if self.per_billed < 100:
 			self.update_billing_status()
@@ -156,6 +158,7 @@ class PurchaseReceipt(BuyingController):
 		if submitted:
 			frappe.throw(_("Purchase Invoice {0} is already submitted").format(submitted[0][0]))
 
+		create_purchase_ledger_entry(self.items, submit=False)
 		self.update_prevdoc_status()
 		self.update_billing_status()
 
@@ -348,6 +351,18 @@ class PurchaseReceipt(BuyingController):
 				}))
 
 		return gl_entries
+
+	def get_purchase_ledger_entry(self, item, submit=True):
+		args = dict(
+			material_request = frappe.get_value("Purchase Order Item", item.purchase_order_item,["material_request"]),
+			purchase_order = item.purchase_order,
+			purchase_order_item = item.purchase_order_item,
+			purchase_receipt = item.parent,
+			purchase_receipt_item = item.name,
+			is_receipt = 1,
+			)
+		return get_purchase_ledger_entry(item, submit, args)
+
 
 	def update_status(self, status):
 		self.set_status(update=True, status = status)
