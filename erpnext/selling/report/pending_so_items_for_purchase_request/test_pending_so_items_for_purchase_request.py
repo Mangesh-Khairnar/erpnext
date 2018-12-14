@@ -12,6 +12,12 @@ from erpnext.selling.doctype.sales_order.test_sales_order import make_sales_orde
 
 
 class TestPendingSOItemsForPurchaseRequest(unittest.TestCase): 
+
+    def test_result_for_so_item(self):
+        so = make_sales_order()
+        report = execute()
+        self.assertEqual(so.items[0].qty, report[1][0]['pending_qty'])
+
     def test_result_for_partial_material_request(self):
         so = make_sales_order()
         mr=make_material_request(so.name)
@@ -21,11 +27,6 @@ class TestPendingSOItemsForPurchaseRequest(unittest.TestCase):
         report = execute()
         self.assertEqual((so.items[0].qty - mr.items[0].qty), report[1][0]['pending_qty'])
 	
-    def test_result_for_so_item(self):
-        so = make_sales_order()
-        report = execute()
-        self.assertEqual(so.items[0].qty, report[1][0]['pending_qty'])
-
     def tearDown(self):
         frappe.db.sql("""delete from `TabSales Order`""")
         frappe.db.sql("""delete from `TabMaterial Request`""")
