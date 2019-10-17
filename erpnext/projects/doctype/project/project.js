@@ -92,7 +92,7 @@ frappe.ui.form.on("Project", {
 
 			frm.add_custom_button(__('Cancelled'), () => {
 				frm.events.set_status(frm, 'Cancelled');
-			}, __('Set Status'));
+			}, __('Set Call'));
 		}
 	},
 
