@@ -38,7 +38,7 @@ class PlaidConnector():
 			"products": self.products,
 			# only allow Plaid-supported languages and countries (LAST: Sep-19-2020)
 			"language": frappe.local.lang if frappe.local.lang in ["en", "fr", "es", "nl"] else "en",
-			"country_codes": ["US", "CA", "FR", "IE", "NL", "ES", "GB"],
+			"country_codes": ["US", "CA"],
 			"user": {
 				"client_user_id": frappe.generate_hash(frappe.session.user, length=32)
 			}

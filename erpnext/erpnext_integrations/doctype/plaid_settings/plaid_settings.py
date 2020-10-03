@@ -82,7 +82,14 @@ def add_bank_accounts(response, bank, company):
 		if not acc_subtype:
 			add_account_subtype(account["subtype"])
 
-		if not frappe.db.exists("Bank Account", dict(integration_id=account["id"])):
+		bank_acc_name = account["name"] + " - " + bank["bank_name"]
+		if frappe.db.exists("Bank Account", bank_acc_name):
+			doc = frappe.get_doc("Bank Account", bank_acc_name)
+			doc.integration_id = account["id"]
+			doc.mask = account["mask"] or ""
+			doc.save()
+
+		elif not frappe.db.exists("Bank Account", dict(integration_id=account["id"])):
 			try:
 				new_account = frappe.get_doc({
 					"doctype": "Bank Account",
@@ -102,6 +109,7 @@ def add_bank_accounts(response, bank, company):
 			except frappe.UniqueValidationError:
 				frappe.msgprint(_("Bank account {0} already exists and could not be created again").format(account["name"]))
 			except Exception:
+				frappe.log_error(title=_("Plaid institution creation error"), message=response)
 				frappe.throw(frappe.get_traceback())
 
 		else:
